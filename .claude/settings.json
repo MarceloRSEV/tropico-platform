@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\Users\\User\\Documents\\squad_tropico\\scripts\\hooks\\token-tracker.js"
+          }
+        ]
+      }
+    ]
+  }
+}

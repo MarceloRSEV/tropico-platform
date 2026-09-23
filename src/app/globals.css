@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+body {
+  color: #171717;
+  background: #ffffff;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm 7mm;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background: #ffffff !important;
+  }
+
+  /* Garante que o grid de KPIs fique em 4 colunas no PDF */
+  .kpi-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  /* Remove overflow-x para a tabela não ser cortada */
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  /* Tabela usa a largura toda da página, layout automático */
+  table {
+    width: 100% !important;
+    table-layout: auto !important;
+    font-size: 10px !important;
+  }
+
+  /* Reduz padding das células na impressão */
+  th, td {
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+  }
+
+  /* Status: nunca quebra linha no print */
+  th:nth-child(2), td:nth-child(2) {
+    white-space: nowrap !important;
+    width: 1px !important;
+  }
+
+  /* Thumbnail -20% no print */
+  table img {
+    width: 128px !important;
+    height: 128px !important;
+  }
+
+  /* Nome do anúncio: espaço razoável sem tomar a tabela toda */
+  .truncate { max-width: 200px !important; }
+
+  /* Remove sombras */
+  .shadow-sm { box-shadow: none !important; }
+
+  /* Evita quebra de linha no meio de linhas da tabela */
+  tr { break-inside: avoid; }
+
+  /* Garante fundo colorido nos badges de status */
+  span[class*="bg-green"] { background-color: #dcfce7 !important; color: #15803d !important; }
+  span[class*="bg-yellow"] { background-color: #fef9c3 !important; color: #a16207 !important; }
+  span[class*="bg-red"] { background-color: #fee2e2 !important; color: #dc2626 !important; }
+  span[class*="bg-orange"] { background-color: #ffedd5 !important; color: #c2410c !important; }
+  span[class*="bg-blue"] { background-color: #dbeafe !important; color: #2563eb !important; }
+  span[class*="bg-gray"] { background-color: #f3f4f6 !important; color: #6b7280 !important; }
+}
