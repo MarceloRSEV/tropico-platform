@@ -1,167 +1,152 @@
-﻿'use client';
+import type { ReactNode } from 'react'
+import { createClient } from '@supabase/supabase-js'
 
-import { useEffect, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+type Props = { since: string; until: string }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-);
+interface CampaignTotals {
+  campaignId: string
+  campaignName: string
+  impressions: number
+  clicks: number
+  conversions: number
+  cost: number
+}
 
-export function GoogleAdsMetrics() {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState({
-    totalImpressions: 0,
-    totalClicks: 0,
-    totalConversions: 0,
-    totalCost: 0,
-  });
+function fmt(n: number) {
+  return n.toLocaleString('pt-BR')
+}
 
-  useEffect(() => {
-    fetchGoogleAdsData();
-  }, []);
+function fmtBRL(n: number) {
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
 
-  async function fetchGoogleAdsData() {
-    try {
-      setLoading(true);
+function fmtPct(n: number) {
+  return n.toFixed(2) + '%'
+}
 
-      // Buscar últimos 30 dias
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const dateStr = thirtyDaysAgo.toISOString().split('T')[0];
+function Notice({ children }: { children: ReactNode }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 px-6 py-8 text-center text-sm text-gray-500">
+      {children}
+    </div>
+  )
+}
 
-      const { data: records, error } = await supabase
-        .from('tropico_google_ads_daily')
-        .select('*')
-        .gte('date', dateStr)
-        .order('date', { ascending: false });
+export async function GoogleAdsMetrics({ since, until }: Props) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return <Notice>Sincronização com o Supabase não configurada.</Notice>
 
-      if (error) throw error;
+  const supabase = createClient(url, key, { auth: { persistSession: false } })
+  const [{ data: rows, error }, { data: lastSync }] = await Promise.all([
+    supabase
+      .from('tropico_google_ads_daily')
+      .select('campaign_id, campaign_name, impressions, clicks, conversions, cost')
+      .gte('date', since)
+      .lte('date', until),
+    supabase
+      .from('tropico_google_ads_sync_log')
+      .select('synced_at, sync_status, records_synced')
+      .order('synced_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
 
-      if (records && records.length > 0) {
-        setData(records);
+  if (error) {
+    console.error('[GoogleAdsMetrics]', error.message)
+    return <Notice>Não foi possível ler os dados sincronizados.</Notice>
+  }
+  if (!rows || rows.length === 0) {
+    return <Notice>Sem dados sincronizados para o período ({since} a {until}).</Notice>
+  }
 
-        // Calcular resumo
-        const totals = records.reduce((acc, row) => ({
-          totalImpressions: acc.totalImpressions + (row.impressions || 0),
-          totalClicks: acc.totalClicks + (row.clicks || 0),
-          totalConversions: acc.totalConversions + (row.conversions || 0),
-          totalCost: acc.totalCost + (row.cost || 0),
-        }), {
-          totalImpressions: 0,
-          totalClicks: 0,
-          totalConversions: 0,
-          totalCost: 0,
-        });
+  const byCampaign = new Map<string, CampaignTotals>()
+  const totals = { impressions: 0, clicks: 0, conversions: 0, cost: 0 }
 
-        setSummary(totals);
-      }
-    } catch (error) {
-      console.error('Erro buscando dados:', error);
-    } finally {
-      setLoading(false);
+  for (const r of rows) {
+    const id = r.campaign_id ?? ''
+    const c = byCampaign.get(id) ?? {
+      campaignId: id,
+      campaignName: r.campaign_name ?? 'Campanha sem nome',
+      impressions: 0, clicks: 0, conversions: 0, cost: 0,
     }
+    c.impressions += Number(r.impressions ?? 0)
+    c.clicks += Number(r.clicks ?? 0)
+    c.conversions += Number(r.conversions ?? 0)
+    c.cost += Number(r.cost ?? 0)
+    byCampaign.set(id, c)
+
+    totals.impressions += Number(r.impressions ?? 0)
+    totals.clicks += Number(r.clicks ?? 0)
+    totals.conversions += Number(r.conversions ?? 0)
+    totals.cost += Number(r.cost ?? 0)
   }
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-gray-500">Carregando dados...</div>
-      </div>
-    );
-  }
+  const campaigns = [...byCampaign.values()].sort((a, b) => b.cost - a.cost)
+  const ctr = (clicks: number, impressions: number) => (impressions > 0 ? (clicks / impressions) * 100 : 0)
+
+  const lastSyncLabel = lastSync?.synced_at
+    ? new Date(lastSync.synced_at).toLocaleString('pt-BR', {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+      })
+    : null
 
   return (
-    <div className="space-y-6">
-      {/* Cards de Resumo */}
+    <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-lg border border-gray-200">
-          <div className="text-sm text-gray-600 mb-1">Impressões</div>
-          <div className="text-2xl font-bold text-blue-600">
-            {summary.totalImpressions.toLocaleString('pt-BR')}
-          </div>
-        </div>
-        
-        <div className="bg-white p-4 rounded-lg border border-gray-200">
-          <div className="text-sm text-gray-600 mb-1">Cliques</div>
-          <div className="text-2xl font-bold text-green-600">
-            {summary.totalClicks.toLocaleString('pt-BR')}
-          </div>
-        </div>
-        
-        <div className="bg-white p-4 rounded-lg border border-gray-200">
-          <div className="text-sm text-gray-600 mb-1">Conversões</div>
-          <div className="text-2xl font-bold text-purple-600">
-            {summary.totalConversions.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
-          </div>
-        </div>
-        
-        <div className="bg-white p-4 rounded-lg border border-gray-200">
-          <div className="text-sm text-gray-600 mb-1">Custo</div>
-          <div className="text-2xl font-bold text-red-600">
-            R$ {summary.totalCost.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
-          </div>
-        </div>
+        <Card label="Impressões" value={fmt(totals.impressions)} />
+        <Card label="Cliques" value={fmt(totals.clicks)} />
+        <Card label="Conversões" value={fmt(Math.round(totals.conversions))} />
+        <Card label="Custo" value={fmtBRL(totals.cost)} />
       </div>
 
-      {/* Tabela de Dados */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Data</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Campanha</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Grupo de Anúncios</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Impressões</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Cliques</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Conversões</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Custo</th>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left text-gray-400 font-semibold px-5 py-3 text-[11px] uppercase tracking-wider">Campanha</th>
+                <th className="text-right text-gray-400 font-semibold px-4 py-3 text-[11px] uppercase tracking-wider">Impressões</th>
+                <th className="text-right text-gray-400 font-semibold px-4 py-3 text-[11px] uppercase tracking-wider">Cliques</th>
+                <th className="text-right text-gray-400 font-semibold px-4 py-3 text-[11px] uppercase tracking-wider">CTR</th>
+                <th className="text-right text-gray-400 font-semibold px-4 py-3 text-[11px] uppercase tracking-wider">Conversões</th>
+                <th className="text-right text-gray-400 font-semibold px-5 py-3 text-[11px] uppercase tracking-wider">Custo</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
-              {data.length > 0 ? (
-                data.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-900">{row.date}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{row.campaign_name || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{row.ad_group_name || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-right text-gray-900">
-                      {(row.impressions || 0).toLocaleString('pt-BR')}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right text-gray-900">
-                      {(row.clicks || 0).toLocaleString('pt-BR')}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right text-gray-900">
-                      {(row.conversions || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right text-gray-900">
-                      R$ {(row.cost || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                    Sem dados disponíveis
+            <tbody className="divide-y divide-gray-100">
+              {campaigns.map(c => (
+                <tr key={c.campaignId} className="hover:bg-gray-50">
+                  <td className="px-5 py-3 text-xs text-gray-700">{c.campaignName}</td>
+                  <td className="px-4 py-3 text-right text-gray-600 tabular-nums text-xs">{fmt(c.impressions)}</td>
+                  <td className="px-4 py-3 text-right text-gray-600 tabular-nums text-xs">{fmt(c.clicks)}</td>
+                  <td className="px-4 py-3 text-right text-gray-600 tabular-nums text-xs">{fmtPct(ctr(c.clicks, c.impressions))}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-xs">
+                    <span className={c.conversions > 0 ? 'text-green-600 font-medium' : 'text-gray-400'}>
+                      {c.conversions > 0 ? fmt(Math.round(c.conversions)) : '—'}
+                    </span>
                   </td>
+                  <td className="px-5 py-3 text-right font-medium text-gray-900 tabular-nums text-xs">{fmtBRL(c.cost)}</td>
                 </tr>
-              )}
+              ))}
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Botão para Atualizar */}
-      <div className="flex justify-end">
-        <button
-          onClick={fetchGoogleAdsData}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-        >
-          Atualizar Dados
-        </button>
+        {lastSyncLabel && (
+          <div className="px-5 py-2 border-t border-gray-100 text-[11px] text-gray-400">
+            Última sincronização: {lastSyncLabel}
+            {lastSync?.sync_status === 'failed' ? ' (falhou)' : ` — ${fmt(lastSync?.records_synced ?? 0)} registros`}
+          </div>
+        )}
       </div>
     </div>
-  );
+  )
+}
+
+function Card({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className="text-xl font-bold mt-1 text-gray-900">{value}</p>
+    </div>
+  )
 }

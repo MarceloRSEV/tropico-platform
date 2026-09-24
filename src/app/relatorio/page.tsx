@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { getMetaDashboardData } from '@/lib/meta'
-import { getGoogleDashboardData } from '@/lib/google'
+import { getGoogleDashboardData, periodRange } from '@/lib/google'
 import DailySpendChart from './DailySpendChart'
 import ConversationBarChart from './ConversationBarChart'
 import CampaignTypeChart from './CampaignTypeChart'
@@ -401,7 +401,7 @@ export default async function RelatorioPage({ searchParams }: Props) {
         {/* Google Ads Sync (Supabase) */}
         <section>
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Dados Sincronizados Google Ads</h2>
-          <GoogleAdsMetrics />
+          <GoogleAdsMetrics {...periodRange(periodo)} />
         </section>
 
       </div>

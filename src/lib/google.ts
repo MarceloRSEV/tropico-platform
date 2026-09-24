@@ -6,7 +6,7 @@
 // Valores monetários da API vêm em MICROS (1 unidade = 1e-6 da moeda) —
 // sempre dividir por 1e6 antes de expor.
 
-const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v18'
+const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v22'
 const OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 
 // ─── Configuração ─────────────────────────────────────────────────────────────
@@ -40,8 +40,9 @@ function today(): string {
 
 function sinceDate(periodo: string): string {
   const d = new Date()
-  if (periodo === '15d') {
-    d.setDate(d.getDate() - 14)
+  const days = /^(\d+)d$/.exec(periodo)
+  if (days) {
+    d.setDate(d.getDate() - (parseInt(days[1], 10) - 1))
     return d.toISOString().split('T')[0]
   }
   if (periodo === 'ano') {
@@ -49,6 +50,11 @@ function sinceDate(periodo: string): string {
   }
   // default: mês corrente
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+/** Range de datas (YYYY-MM-DD) de um período do relatório: `15d`, `60d`, `mes`, `ano`. */
+export function periodRange(periodo: string): { since: string; until: string } {
+  return { since: sinceDate(periodo), until: today() }
 }
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -98,8 +104,9 @@ export interface GoogleDashboardData {
 }
 
 /** Linha crua retornada pelo endpoint googleAds:search (REST usa camelCase). */
-interface GoogleAdsSearchRow {
-  campaign?: { id?: string; name?: string; status?: string; type?: string }
+export interface GoogleAdsSearchRow {
+  campaign?: { id?: string; name?: string; status?: string; advertisingChannelType?: string }
+  adGroup?: { id?: string; name?: string }
   segments?: { date?: string }
   metrics?: {
     costMicros?: string
@@ -156,7 +163,7 @@ async function getAccessToken(): Promise<string> {
  * Nota: POST não entra no Data Cache do Next — o cache efetivo do dashboard
  * vem do `revalidate` das rotas/páginas que consomem este módulo.
  */
-async function gaqlSearch(query: string): Promise<GoogleAdsSearchRow[]> {
+export async function gaqlSearch(query: string): Promise<GoogleAdsSearchRow[]> {
   const accessToken = await getAccessToken()
   const custId = customerId()
 
@@ -275,7 +282,7 @@ async function fetchTopCampaigns(since: string, until: string, limit = 10): Prom
 
 async function fetchCampaignsByType(since: string, until: string): Promise<GoogleCampaignByType[]> {
   const rows = await gaqlSearch(`
-    SELECT campaign.name, campaign.type,
+    SELECT campaign.name, campaign.advertising_channel_type,
            metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions
     FROM campaign
     WHERE segments.date BETWEEN '${since}' AND '${until}'
@@ -293,7 +300,7 @@ async function fetchCampaignsByType(since: string, until: string): Promise<Googl
   const result = new Map<string, GoogleCampaignByType>()
 
   for (const r of rows) {
-    const type = mapCampaignTypeToCategory(r.campaign?.type ?? 'UNKNOWN')
+    const type = mapCampaignTypeToCategory(r.campaign?.advertisingChannelType ?? 'UNKNOWN')
     const cost = parseInt(r.metrics?.costMicros ?? '0', 10) / MICROS
     const conversions = r.metrics?.conversions ?? 0
 
@@ -317,130 +324,129 @@ async function fetchCampaignsByType(since: string, until: string): Promise<Googl
   return Array.from(result.values()).sort((a, b) => b.cost - a.cost)
 }
 
-// ─── Supabase Integration ─────────────────────────────────────────────────────
+// ─── Fallback: dados sincronizados no Supabase ────────────────────────────────
+// Tabela `tropico_google_ads_daily`, alimentada por /api/cron/sync-google-ads.
+// Usada apenas quando a Google Ads API falha ou não está configurada.
 
-// Cache em memória para evitar múltiplas queries
-let cachedSupabaseData: { data: GoogleDailyRow[]; expiresAt: number } | null = null
+interface SyncedRow {
+  date: string
+  campaign_id: string | null
+  campaign_name: string | null
+  impressions: number
+  clicks: number
+  conversions: number
+  cost: number
+}
 
-/**
- * Busca dados Google Ads do Supabase (tabela google_ads_daily).
- * Fallback para mock se houver erro de conexão.
- * Cache em memória por 5 minutos.
- */
-async function getGoogleDataFromSupabase(since: string, until: string): Promise<GoogleDailyRow[]> {
-  try {
-    // Verificar cache
-    if (cachedSupabaseData && Date.now() < cachedSupabaseData.expiresAt) {
-      console.log('[Supabase] Usando cache')
-      return cachedSupabaseData.data
-    }
+async function fetchSyncedRows(since: string, until: string): Promise<SyncedRow[]> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return []
 
-    const { createClient } = await import('@supabase/supabase-js')
-    const supabase = createClient(
-      'https://ibryvujocmgjperqxqli.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlicnl2dWpvY21nanBlcnF4cWxpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NjUxNzEsImV4cCI6MjA5MDE0MTE3MX0.qAF_t9B5TLR4cmpGXtWwIk66T7G6oXhMEEKJPgqqN_A'
-    )
+  const { createClient } = await import('@supabase/supabase-js')
+  const supabase = createClient(url, key, { auth: { persistSession: false } })
+  const { data, error } = await supabase
+    .from('tropico_google_ads_daily')
+    .select('date, campaign_id, campaign_name, impressions, clicks, conversions, cost')
+    .gte('date', since)
+    .lte('date', until)
 
-    const { data, error } = await supabase
-      .from('google_ads_daily')
-      .select('data, custo, impressoes, cliques')
-      .gte('data', since)
-      .lte('data', until)
-      .order('data', { ascending: true })
-
-    if (error) {
-      console.error('[Supabase] Query error:', error)
-      return []
-    }
-
-    const result = (data ?? []).map((row: { data: string; custo: number | string; impressoes: number | string; cliques: number | string }) => ({
-      date: row.data,
-      cost: typeof row.custo === 'string' ? parseFloat(row.custo) : row.custo || 0,
-      impressions: typeof row.impressoes === 'string' ? parseInt(row.impressoes) : row.impressoes || 0,
-      clicks: typeof row.cliques === 'string' ? parseInt(row.cliques) : row.cliques || 0,
-    }))
-
-    // Salvar em cache
-    cachedSupabaseData = {
-      data: result,
-      expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutos
-    }
-
-    return result
-  } catch (error) {
-    console.error('[Supabase] Connection error:', error)
+  if (error) {
+    console.error('[Google fallback] Supabase:', error.message)
     return []
+  }
+  return (data ?? []).map(r => ({
+    date: r.date,
+    campaign_id: r.campaign_id,
+    campaign_name: r.campaign_name,
+    impressions: Number(r.impressions ?? 0),
+    clicks: Number(r.clicks ?? 0),
+    conversions: Number(r.conversions ?? 0),
+    cost: Number(r.cost ?? 0),
+  }))
+}
+
+function withRates<T extends { cost: number; impressions: number; clicks: number }>(x: T) {
+  return {
+    ...x,
+    ctr: x.impressions > 0 ? (x.clicks / x.impressions) * 100 : 0,
+    avgCpc: x.clicks > 0 ? x.cost / x.clicks : 0,
+  }
+}
+
+function buildFromSyncedRows(rows: SyncedRow[]): Pick<GoogleDashboardData, 'overview' | 'daily' | 'campaigns'> {
+  const byDate = new Map<string, GoogleDailyRow>()
+  const byCampaign = new Map<string, GoogleCampaign>()
+  const totals = { cost: 0, impressions: 0, clicks: 0, conversions: 0 }
+
+  for (const r of rows) {
+    const d = byDate.get(r.date) ?? { date: r.date, cost: 0, impressions: 0, clicks: 0 }
+    d.cost += r.cost
+    d.impressions += r.impressions
+    d.clicks += r.clicks
+    byDate.set(r.date, d)
+
+    const id = r.campaign_id ?? ''
+    const c = byCampaign.get(id) ?? {
+      campaignId: id,
+      campaignName: r.campaign_name ?? 'Campanha sem nome',
+      status: 'UNKNOWN',
+      cost: 0, impressions: 0, clicks: 0, ctr: 0, avgCpc: 0, conversions: 0,
+    }
+    c.cost += r.cost
+    c.impressions += r.impressions
+    c.clicks += r.clicks
+    c.conversions += r.conversions
+    byCampaign.set(id, c)
+
+    totals.cost += r.cost
+    totals.impressions += r.impressions
+    totals.clicks += r.clicks
+    totals.conversions += r.conversions
+  }
+
+  return {
+    overview: withRates(totals),
+    daily: [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    campaigns: [...byCampaign.values()]
+      .filter(c => c.cost > 0)
+      .map(withRates)
+      .sort((a, b) => b.cost - a.cost)
+      .slice(0, 10),
   }
 }
 
 // ─── Funções principais ───────────────────────────────────────────────────────
 
 /**
- * Dados completos do dashboard Google Ads para um período (15d|mes|ano).
- * Retorna null se a integração não estiver configurada (degradação graciosa).
+ * Dados completos do dashboard Google Ads para um período (15d|60d|mes|ano).
+ * Fonte primária: Google Ads API. Fallback: tabela sincronizada no Supabase.
+ * Retorna null quando não há dado real disponível — nunca dados fictícios.
  */
 export async function getGoogleDashboardData(periodo = 'mes'): Promise<GoogleDashboardData | null> {
-  // Tentar Supabase primeiro; fallback para mock se indisponível
-  const since = sinceDate(periodo)
-  const until = today()
+  const { since, until } = periodRange(periodo)
+  const updatedAt = new Date().toISOString()
 
-  let daily: GoogleDailyRow[] = []
+  if (isGoogleAdsConfigured()) {
+    const live = await Promise.all([
+      fetchOverview(since, until),
+      fetchDaily(since, until),
+      fetchTopCampaigns(since, until),
+      fetchCampaignsByType(since, until),
+    ]).catch(e => {
+      console.error('[Google API] indisponível, usando dados sincronizados:', e)
+      return null
+    })
 
-  // Tentar buscar do Supabase (dados reais)
-  daily = await getGoogleDataFromSupabase(since, until)
-
-  // Fallback para mock se Supabase estiver vazio ou com erro
-  if (daily.length === 0) {
-    const { getMockGoogleDailyData } = await import('./google-mock')
-    daily = getMockGoogleDailyData(since, until) as GoogleDailyRow[]
+    if (live) {
+      const [overview, daily, campaigns, campaignsByType] = live
+      return { overview, daily, campaigns, campaignsByType, updatedAt }
+    }
   }
 
-  const overview: GoogleOverview = {
-    cost: daily.reduce((sum, d) => sum + d.cost, 0),
-    impressions: daily.reduce((sum, d) => sum + d.impressions, 0),
-    clicks: daily.reduce((sum, d) => sum + d.clicks, 0),
-    ctr: daily.length > 0 ? (daily.reduce((sum, d) => sum + d.clicks, 0) / daily.reduce((sum, d) => sum + d.impressions, 0)) * 100 : 0,
-    avgCpc: daily.length > 0 ? daily.reduce((sum, d) => sum + d.cost, 0) / daily.reduce((sum, d) => sum + d.clicks, 0) : 0,
-    conversions: 0,
-  }
-
-  const campaigns: GoogleCampaign[] = []
-
-  // Importar função mock se precisar
-  const { getMockGoogleCampaignsByType } = await import('./google-mock')
-  const campaignsByType = getMockGoogleCampaignsByType(since, until).map(ct => ({
-    ...ct,
-    type: ct.type as 'Vendas' | 'Tráfego' | 'Alcance',
-    conversions: 0,
-  })) as GoogleCampaignByType[]
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_, __, ___, ____] = await Promise.all([
-    fetchOverview(since, until).catch(e => {
-      console.error('[Google overview]', e)
-      return EMPTY_OVERVIEW
-    }),
-    fetchDaily(since, until).catch(e => {
-      console.error('[Google daily]', e)
-      return [] as GoogleDailyRow[]
-    }),
-    fetchTopCampaigns(since, until).catch(e => {
-      console.error('[Google campaigns]', e)
-      return [] as GoogleCampaign[]
-    }),
-    fetchCampaignsByType(since, until).catch(e => {
-      console.error('[Google campaignsByType]', e)
-      return [] as GoogleCampaignByType[]
-    }),
-  ])
-
-  return {
-    overview,
-    daily,
-    campaigns,
-    campaignsByType,
-    updatedAt: new Date().toISOString(),
-  }
+  const rows = await fetchSyncedRows(since, until)
+  if (rows.length === 0) return null
+  return { ...buildFromSyncedRows(rows), campaignsByType: [], updatedAt }
 }
 
 /**

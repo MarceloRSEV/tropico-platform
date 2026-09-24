@@ -105,7 +105,7 @@ async function fetchGoogleAdsData(startDate, endDate) {
 
   try {
     const response = await axios.post(
-      `https://googleads.googleapis.com/v17/customers/${GOOGLE_ADS.CUSTOMER_ID}/googleAds:search`,
+      `https://googleads.googleapis.com/v22/customers/${GOOGLE_ADS.CUSTOMER_ID}/googleAds:search`,
       { query },
       {
         headers: {

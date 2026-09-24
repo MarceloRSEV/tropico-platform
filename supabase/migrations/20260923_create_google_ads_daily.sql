@@ -1,12 +1,13 @@
-﻿-- Create tropico_google_ads_daily table for syncing Google Ads data
--- Project: tropico (ibryvujocmgjperqxqli) - Multi-Client Support
--- Created: 2026-09-23
--- Convention: {client}_{domain}_{entity} (e.g., tropico_google_ads_daily)
+-- Google Ads → Supabase (Trópico)
+-- Projeto Supabase compartilhado entre clientes (escalada-virtual / pbdhkqvxbpmawubihugb).
+-- Convenção multi-cliente: {cliente}_{dominio}_{entidade}.
+-- RLS habilitado SEM policies: anon/authenticated não leem nada; apenas o
+-- service_role (server-side) acessa, o que impede vazamento entre clientes.
 
-CREATE TABLE IF NOT EXISTS tropico_google_ads_daily (
+CREATE TABLE IF NOT EXISTS public.tropico_google_ads_daily (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id TEXT NOT NULL,
-  client_name TEXT DEFAULT ''Trópico'',  -- Identificação legível do cliente
+  client_name TEXT DEFAULT 'Trópico',
   campaign_id TEXT,
   campaign_name TEXT,
   ad_group_id TEXT,
@@ -19,44 +20,42 @@ CREATE TABLE IF NOT EXISTS tropico_google_ads_daily (
   synced_at TIMESTAMP DEFAULT NOW(),
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(customer_id, campaign_id, ad_group_id, date)
+  UNIQUE (customer_id, campaign_id, ad_group_id, date)
 );
 
-CREATE INDEX idx_tropico_google_ads_daily_date ON tropico_google_ads_daily(date DESC);
-CREATE INDEX idx_tropico_google_ads_daily_customer ON tropico_google_ads_daily(customer_id);
-CREATE INDEX idx_tropico_google_ads_daily_campaign ON tropico_google_ads_daily(campaign_id);
-CREATE INDEX idx_tropico_google_ads_daily_client ON tropico_google_ads_daily(client_name);
-CREATE INDEX idx_tropico_google_ads_daily_synced ON tropico_google_ads_daily(synced_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tropico_google_ads_daily_date     ON public.tropico_google_ads_daily (date DESC);
+CREATE INDEX IF NOT EXISTS idx_tropico_google_ads_daily_customer ON public.tropico_google_ads_daily (customer_id);
+CREATE INDEX IF NOT EXISTS idx_tropico_google_ads_daily_campaign ON public.tropico_google_ads_daily (campaign_id);
 
-ALTER TABLE tropico_google_ads_daily ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "tropico_admin_or_self"
-  ON tropico_google_ads_daily
-  FOR SELECT
-  USING ((auth.jwt_claim(''user_type'')::text = ''admin'') OR (auth.jwt_claim(''customer_id'')::text = customer_id));
-
-CREATE OR REPLACE FUNCTION update_tropico_google_ads_daily_timestamp()
-RETURNS TRIGGER AS $$
-BEGIN NEW.updated_at = NOW(); RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_update_tropico_google_ads_daily_timestamp
-  BEFORE UPDATE ON tropico_google_ads_daily FOR EACH ROW
-  EXECUTE FUNCTION update_tropico_google_ads_daily_timestamp();
-
-CREATE TABLE IF NOT EXISTS tropico_google_ads_sync_log (
+CREATE TABLE IF NOT EXISTS public.tropico_google_ads_sync_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id TEXT NOT NULL,
-  client_name TEXT DEFAULT ''Trópico'',
+  client_name TEXT DEFAULT 'Trópico',
   sync_date DATE NOT NULL,
   records_synced INT DEFAULT 0,
-  sync_status TEXT DEFAULT ''pending'',
+  sync_status TEXT DEFAULT 'pending',
   error_message TEXT,
   synced_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(customer_id, sync_date)
+  UNIQUE (customer_id, sync_date)
 );
 
-CREATE INDEX idx_tropico_google_ads_sync_log_customer ON tropico_google_ads_sync_log(customer_id);
-CREATE INDEX idx_tropico_google_ads_sync_log_status ON tropico_google_ads_sync_log(sync_status);
-CREATE INDEX idx_tropico_google_ads_sync_log_client ON tropico_google_ads_sync_log(client_name);
+CREATE OR REPLACE FUNCTION public.tropico_google_ads_set_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_tropico_google_ads_daily_updated_at ON public.tropico_google_ads_daily;
+CREATE TRIGGER trg_tropico_google_ads_daily_updated_at
+  BEFORE UPDATE ON public.tropico_google_ads_daily
+  FOR EACH ROW EXECUTE FUNCTION public.tropico_google_ads_set_updated_at();
+
+ALTER TABLE public.tropico_google_ads_daily    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tropico_google_ads_sync_log ENABLE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.tropico_google_ads_daily IS
+  'Métricas diárias Google Ads por grupo de anúncios — cliente Trópico. Escrita: /api/cron/sync-google-ads (service_role).';
+COMMENT ON TABLE public.tropico_google_ads_sync_log IS
+  'Auditoria das execuções do sync Google Ads — cliente Trópico.';
