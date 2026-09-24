@@ -73,6 +73,9 @@ export interface MetaCreative {
   adId: string
   adName: string
   thumbnailUrl: string | null
+  /** Imagem grande (600x600) do criativo — capa do vídeo ou imagem do post */
+  imageUrl: string | null
+  instagramPermalinkUrl: string | null
   postId: string | null
   effectiveStatus: string
   spend: number
@@ -197,7 +200,7 @@ async function fetchDaily(since: string): Promise<MetaDailyRow[]> {
 
 async function fetchAdInsights(
   since: string,
-): Promise<Map<string, { metrics: Omit<MetaCreative, 'adId' | 'adName' | 'thumbnailUrl' | 'postId' | 'effectiveStatus' | 'likes' | 'comments' | 'conversations'>; likes: number; comments: number; conversations: number }>> {
+): Promise<Map<string, { metrics: Omit<MetaCreative, 'adId' | 'adName' | 'thumbnailUrl' | 'imageUrl' | 'instagramPermalinkUrl' | 'postId' | 'effectiveStatus' | 'likes' | 'comments' | 'conversations'>; likes: number; comments: number; conversations: number }>> {
   const adAccountId = process.env.META_AD_ACCOUNT_ID!
   const timeRange = JSON.stringify({ since, until: today() })
 
@@ -217,7 +220,7 @@ async function fetchAdInsights(
   }
 
   const json = await res.json()
-  const map = new Map<string, { metrics: Omit<MetaCreative, 'adId' | 'adName' | 'thumbnailUrl' | 'postId' | 'effectiveStatus' | 'likes' | 'comments' | 'conversations'>; likes: number; comments: number; conversations: number }>()
+  const map = new Map<string, { metrics: Omit<MetaCreative, 'adId' | 'adName' | 'thumbnailUrl' | 'imageUrl' | 'instagramPermalinkUrl' | 'postId' | 'effectiveStatus' | 'likes' | 'comments' | 'conversations'>; likes: number; comments: number; conversations: number }>()
 
   for (const d of json.data ?? []) {
     // actions é um array de { action_type, value } — filtramos os tipos relevantes
@@ -253,9 +256,19 @@ async function fetchAdInsights(
   return map
 }
 
+interface AdCreativeInfo {
+  name: string
+  thumbnailUrl: string | null
+  imageUrl: string | null
+  instagramPermalinkUrl: string | null
+  postId: string | null
+  effectiveStatus: string
+  campaignObjective?: string
+}
+
 async function fetchAdCreatives(
   adIds: string[],
-): Promise<Map<string, { name: string; thumbnailUrl: string | null; postId: string | null; effectiveStatus: string; campaignObjective?: string }>> {
+): Promise<Map<string, AdCreativeInfo>> {
   if (adIds.length === 0) return new Map()
 
   const adAccountId = process.env.META_AD_ACCOUNT_ID!
@@ -263,8 +276,9 @@ async function fetchAdCreatives(
   // effective_object_story_id = "pageId_postId" — é o post do Facebook vinculado ao anúncio
   // effective_status dentro do filtering para sobrescrever o filtro padrão ACTIVE da API
   // campaign{objective} para pegar o objetivo da campanha vinculada
+  // thumbnail_width/height(600) faz o Graph devolver o thumbnail em 600x600 (padrão é 64x64)
   const url = buildUrl(`${adAccountId}/ads`, {
-    fields: 'id,name,effective_status,effective_object_story_id,creative{thumbnail_url,image_url},campaign{objective}',
+    fields: 'id,name,effective_status,effective_object_story_id,creative.thumbnail_width(600).thumbnail_height(600){thumbnail_url,image_url,instagram_permalink_url},campaign{objective}',
     filtering: JSON.stringify([
       { field: 'id', operator: 'IN', value: adIds },
       { field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED', 'IN_PROCESS', 'WITH_ISSUES'] },
@@ -276,13 +290,17 @@ async function fetchAdCreatives(
   if (!res.ok) throw new Error(`Meta creatives error: ${res.status}`)
 
   const json = await res.json()
-  const map = new Map<string, { name: string; thumbnailUrl: string | null; postId: string | null; effectiveStatus: string; campaignObjective?: string }>()
+  const map = new Map<string, AdCreativeInfo>()
 
   for (const ad of json.data ?? []) {
     const thumbnail = ad.creative?.thumbnail_url ?? ad.creative?.image_url ?? null
+    // Para cards: prioriza a imagem original do post; cai no thumbnail 600x600 (capa de vídeo)
+    const image = ad.creative?.image_url ?? ad.creative?.thumbnail_url ?? null
     map.set(ad.id, {
       name: ad.name,
       thumbnailUrl: thumbnail,
+      imageUrl: image,
+      instagramPermalinkUrl: ad.creative?.instagram_permalink_url ?? null,
       postId: ad.effective_object_story_id ?? null,
       effectiveStatus: ad.effective_status ?? 'UNKNOWN',
       campaignObjective: ad.campaign?.objective ?? undefined,
@@ -427,7 +445,7 @@ export async function getMetaTopAds(since: string, until: string, limit = 3): Pr
   const adIds = rows.map(d => String(d.ad_id))
   const creativesMap = await fetchAdCreatives(adIds).catch(e => {
     console.error('[Meta top ads creatives]', e)
-    return new Map<string, { name: string; thumbnailUrl: string | null; postId: string | null; effectiveStatus: string }>()
+    return new Map<string, AdCreativeInfo>()
   })
 
   return rows.map(d => {
@@ -530,7 +548,7 @@ export async function getMetaDashboardData(periodo = 'mes'): Promise<MetaDashboa
       return [] as MetaDailyRow[]
     })
 
-    type InsightData = { metrics: Omit<MetaCreative, 'adId' | 'adName' | 'thumbnailUrl' | 'postId' | 'effectiveStatus' | 'likes' | 'comments' | 'conversations'>; likes: number; comments: number; conversations: number }
+    type InsightData = { metrics: Omit<MetaCreative, 'adId' | 'adName' | 'thumbnailUrl' | 'imageUrl' | 'instagramPermalinkUrl' | 'postId' | 'effectiveStatus' | 'likes' | 'comments' | 'conversations'>; likes: number; comments: number; conversations: number }
     const insightsMap = await fetchAdInsights(since).catch(e => {
       console.error('[Meta adInsights]', e)
       return new Map<string, InsightData>()
@@ -563,6 +581,8 @@ export async function getMetaDashboardData(periodo = 'mes'): Promise<MetaDashboa
           adId: id,
           adName: creative?.name ?? `Anúncio ${id}`,
           thumbnailUrl: creative?.thumbnailUrl ?? null,
+          imageUrl: creative?.imageUrl ?? null,
+          instagramPermalinkUrl: creative?.instagramPermalinkUrl ?? null,
           postId: creative?.postId ?? null,
           effectiveStatus: creative?.effectiveStatus ?? 'UNKNOWN',
           likes,

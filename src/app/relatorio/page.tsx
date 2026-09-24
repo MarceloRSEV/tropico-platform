@@ -3,6 +3,7 @@ import { getMetaDashboardData } from '@/lib/meta'
 import { getGoogleDashboardData, periodRange } from '@/lib/google'
 import DailySpendChart from './DailySpendChart'
 import ConversationBarChart from './ConversationBarChart'
+import TopAdsCards from './TopAdsCards'
 import CampaignTypeChart from './CampaignTypeChart'
 import WeeklyComparisonTable from './WeeklyComparisonTable'
 import PrintButton from './PrintButton'
@@ -144,6 +145,11 @@ export default async function RelatorioPage({ searchParams }: Props) {
         {/* Conversas Diárias */}
         <section>
           <ConversationBarChart daily={data.daily} />
+        </section>
+
+        {/* Melhores anúncios por conversas */}
+        <section>
+          <TopAdsCards creatives={creatives} />
         </section>
 
         {/* Audiência Meta */}

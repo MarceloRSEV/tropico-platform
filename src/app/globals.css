@@ -56,6 +56,15 @@ body {
     height: 128px !important;
   }
 
+  /* Cards de melhores anúncios: 3 colunas lado a lado, sem quebrar no meio */
+  .top-ads-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 10px !important;
+  }
+  .top-ads-card { break-inside: avoid; }
+  .top-ads-card img { max-height: 180px !important; }
+
   /* Nome do anúncio: espaço razoável sem tomar a tabela toda */
   .truncate { max-width: 200px !important; }
 
