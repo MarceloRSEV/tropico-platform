@@ -41,6 +41,30 @@ function sinceDate(periodo: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
+/**
+ * Busca todas as páginas de um endpoint do Graph API seguindo `paging.next`.
+ * Retorna a concatenação de `data` de todas as páginas (com limite de segurança).
+ */
+async function fetchAllPages(firstUrl: string, label: string, maxPages = 10): Promise<Array<Record<string, unknown>>> {
+  const all: Array<Record<string, unknown>> = []
+  let url: string | null = firstUrl
+
+  for (let page = 0; url && page < maxPages; page++) {
+    const res = await fetchWithTimeout(url, { next: { revalidate: 1800 } })
+    if (!res.ok) {
+      const body = await res.text()
+      if (page === 0) throw new Error(`${label} error: ${res.status} — ${body}`)
+      console.error(`[Meta ${label}] página ${page + 1}`, res.status, body)
+      break
+    }
+    const json = await res.json()
+    all.push(...(json.data ?? []))
+    url = json.paging?.next ?? null
+  }
+
+  return all
+}
+
 function buildUrl(path: string, params: Record<string, string>): string {
   const url = new URL(`${META_API}/${path}`)
   url.searchParams.set('access_token', process.env.META_ACCESS_TOKEN!)
@@ -210,19 +234,19 @@ async function fetchAdInsights(
     time_range: timeRange,
     level: 'ad',
     sort: JSON.stringify(['spend_descending']),
-    limit: '20',
+    limit: '100',
   })
 
-  const res = await fetchWithTimeout(url, { next: { revalidate: 1800 } })
-  if (!res.ok) {
-    console.error('[Meta fetchAdInsights]', res.status, await res.text())
-    return new Map()
-  }
+  // Pagina para trazer TODOS os anúncios com entrega no período (não só os 100 de maior gasto)
+  const rows = await fetchAllPages(url, 'fetchAdInsights').catch(e => {
+    console.error('[Meta fetchAdInsights]', e)
+    return [] as Array<Record<string, unknown>>
+  })
 
-  const json = await res.json()
   const map = new Map<string, { metrics: Omit<MetaCreative, 'adId' | 'adName' | 'thumbnailUrl' | 'imageUrl' | 'instagramPermalinkUrl' | 'postId' | 'effectiveStatus' | 'likes' | 'comments' | 'conversations'>; likes: number; comments: number; conversations: number }>()
 
-  for (const d of json.data ?? []) {
+  for (const row of rows) {
+    const d = row as Record<string, string> & { actions?: Array<{ action_type: string; value: string }> }
     // actions é um array de { action_type, value } — filtramos os tipos relevantes
     const actions: Array<{ action_type: string; value: string }> = d.actions ?? []
 
@@ -283,16 +307,14 @@ async function fetchAdCreatives(
       { field: 'id', operator: 'IN', value: adIds },
       { field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED', 'IN_PROCESS', 'WITH_ISSUES'] },
     ]),
-    limit: '50',
+    limit: '100',
   })
 
-  const res = await fetchWithTimeout(url, { next: { revalidate: 1800 } })
-  if (!res.ok) throw new Error(`Meta creatives error: ${res.status}`)
-
-  const json = await res.json()
+  const ads = await fetchAllPages(url, 'creatives')
   const map = new Map<string, AdCreativeInfo>()
 
-  for (const ad of json.data ?? []) {
+  for (const row of ads) {
+    const ad = row as { id: string; name: string; effective_status?: string; effective_object_story_id?: string; creative?: { thumbnail_url?: string; image_url?: string; instagram_permalink_url?: string }; campaign?: { objective?: string } }
     const thumbnail = ad.creative?.thumbnail_url ?? ad.creative?.image_url ?? null
     // Para cards: prioriza a imagem original do post; cai no thumbnail 600x600 (capa de vídeo)
     const image = ad.creative?.image_url ?? ad.creative?.thumbnail_url ?? null

@@ -52,6 +52,8 @@ const FILTROS = [
   { label: 'Este ano',        value: 'ano' },
 ]
 
+const TABLE_AD_LIMIT = 20
+
 type Props = { searchParams: Promise<{ periodo?: string }> }
 
 export default async function RelatorioPage({ searchParams }: Props) {
@@ -62,8 +64,12 @@ export default async function RelatorioPage({ searchParams }: Props) {
     getMetaDashboardData('60d'), // Dados completos para o Comparativo Semanal
     getGoogleDashboardData('60d'),
   ])
-  const { overview, creatives, cities, updatedAt } = data
-  const totalConversations = creatives.reduce((sum, ad) => sum + ad.conversations, 0)
+  const { overview, cities, updatedAt } = data
+  // Lista completa (todos os anúncios com entrega no período) alimenta o ranking e os KPIs;
+  // as tabelas por objetivo mostram só os TABLE_AD_LIMIT de maior gasto para não inflar o relatório
+  const allCreatives = data.creatives
+  const creatives = allCreatives.slice(0, TABLE_AD_LIMIT)
+  const totalConversations = allCreatives.reduce((sum, ad) => sum + ad.conversations, 0)
 
   const updatedLabel = new Date(updatedAt).toLocaleString('pt-BR', {
     day: '2-digit', month: '2-digit', year: 'numeric',
@@ -116,7 +122,7 @@ export default async function RelatorioPage({ searchParams }: Props) {
             <KpiCard label="Cliques"     value={fmt(overview.clicks)} />
             <KpiCard label="CTR"         value={fmtPct(overview.ctr)} />
             <KpiCard label="CPM"         value={fmtBRL(overview.cpm)} />
-            <KpiCard label="Curtidas"    value={fmt(creatives.reduce((s, a) => s + a.likes, 0))} />
+            <KpiCard label="Curtidas"    value={fmt(allCreatives.reduce((s, a) => s + a.likes, 0))} />
             <KpiCard label="Conversas"   value={fmt(totalConversations)} highlight={totalConversations > 0} />
           </div>
         </div>
@@ -149,7 +155,7 @@ export default async function RelatorioPage({ searchParams }: Props) {
 
         {/* Melhores anúncios por conversas */}
         <section>
-          <TopAdsCards creatives={creatives} />
+          <TopAdsCards creatives={allCreatives} />
         </section>
 
         {/* Audiência Meta */}
