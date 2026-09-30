@@ -1,5 +1,16 @@
 # Trópico — Client Memory
 
+> 📋 **Pendências centralizadas (2026-09-24):** a lista oficial do que está aberto para este cliente fica em `C:/Users/User/Documents/Squad-Escalada/PENDENCIAS.md`. As listas de tarefas abaixo são histórico de sessão — ao abrir/concluir pendência, atualizar lá.
+
+## ⚡ SESSÃO 2026-09-29 — Auditoria de tráfego + onboarding (@traffic-manager Max)
+
+- **Relatório:** `Squad-Escalada/docs/clients/tropico/reports/audit-trafego-20260929.md` (Meta 90d + Google 31/07→28/09, somente leitura via API).
+- **Registros:** ACC-003 Meta ativa (`act_1382100695316860`), ACC-006 Google criada (`992-317-4960`), CMP-001/002/003 em `campaigns.yaml` com metas. Verba acordada: **R$ 1.500 Meta + R$ 300 Google**. Metas: R$ 35/conversa WhatsApp; R$ 3,50/1.000 alcançados; Google sem meta até rastrear conversão.
+- **REGRA do Marcelo:** nenhuma mudança nas contas sem OK explícito, mesmo as "autônomas" da matriz.
+- **Achados-chave:** (1) Google Ads com 0 conversões em 13 meses apesar de 2 ações primárias (tag `AW-16644575808` ausente no HTML; site Loja Integrada com `GTM-NSNSQ54`) → TSK-018; (2) Meta: conjunto Masculino R$ 15/conversa com 19% da verba vs Vans_feminino_masc R$ 57 com 81%; mulheres 18-34 a R$ 95 → TSK-020; (3) sem exclusão de convertidos nem remarketing → TSK-021; (4) Google tudo em ampla, QS 1-4, 2 grupos com as mesmas palavras, IS 10%.
+- **Teste em andamento:** 3 públicos da Reconhecimento_lojacaxias (Caxias Raio 2 km × Interesses-IA 9 km × interesses_vans 80 km novo de 28/09), R$ 6/dia cada, mesmos criativos. Veredito em **2026-10-06** por custo/1.000 alcançados, frequência e engajamento/1.000 imp. Marcelo vai revisar o raio de 80 km manualmente.
+- **Como puxar dados:** Meta via Graph API v21 com `META_ACCESS_TOKEN` do `.env` (expira **2026-10-06** → TSK-019); Google via GAQL v22 (script em scratchpad; sem `pageSize` no body e datas como `BETWEEN 'YYYY-MM-DD' AND ...`, `LAST_60_DAYS` não existe). Rodar com `node --env-file=.env`.
+
 ## ⚡ SESSÃO 2026-08-25 — Automação Keep-Alive + Crons (✅ COMPLETO)
 
 ### Resumo da sessão
@@ -267,3 +278,6 @@ Status: ❌ Token expirado (401 invalid_grant)
 |------|---------|--------|
 | — | Story 4.1 — Autenticação e Sessão | DONE |
 | 2026-08-06 | Story 1.2 — Google Ads (src/lib/google.ts, /api/google) + /api/generate-report semanal (n8n) + seção Google no /relatorio | DONE — código pronto; ativar exige GOOGLE_ADS_* no .env (developer token MCC, OAuth client, refresh token, customer IDs) e REPORT_API_TOKEN |
+
+## 2026-09-24 — Bloco "Melhores Anúncios" no /relatorio ✅
+- `src/app/relatorio/TopAdsCards.tsx`: top 3 anúncios por conversas com imagem 600x600 (via `creative.thumbnail_width(600).thumbnail_height(600)`), abaixo de "Conversas por Dia". Commit 748a183, no ar em https://tropico-platform.vercel.app/relatorio.

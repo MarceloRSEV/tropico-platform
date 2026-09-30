@@ -30,8 +30,11 @@ async function fetchWithTimeout(
 
 function sinceDate(periodo: string): string {
   const d = new Date()
-  if (periodo === '15d') {
-    d.setDate(d.getDate() - 14)
+  // `15d`, `60d`, ... — mesma regra do google.ts (antes só `15d` era tratado e
+  // `60d`, usado pelo Comparativo Semanal, caía no mês corrente).
+  const days = /^(\d+)d$/.exec(periodo)
+  if (days) {
+    d.setDate(d.getDate() - (parseInt(days[1], 10) - 1))
     return d.toISOString().split('T')[0]
   }
   if (periodo === 'ano') {
@@ -191,21 +194,19 @@ async function fetchDaily(since: string): Promise<MetaDailyRow[]> {
   const adAccountId = process.env.META_AD_ACCOUNT_ID!
   const timeRange = JSON.stringify({ since, until: today() })
 
+  // `time_increment=1` devolve 1 linha por dia e o Graph API pagina em 25 por
+  // padrão — sem paginar, a série parava todo mês no dia 25. `limit` alto +
+  // fetchAllPages garante o período inteiro (até 1 ano no filtro "ano").
   const url = buildUrl(`${adAccountId}/insights`, {
     fields: 'spend,impressions,clicks,actions',
     time_range: timeRange,
     time_increment: '1',
     level: 'account',
+    limit: '500',
   })
 
-  const res = await fetchWithTimeout(url, { next: { revalidate: 1800 } })
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`Meta daily error: ${res.status} — ${body}`)
-  }
-
-  const json = await res.json()
-  return (json.data ?? []).map((d: Record<string, unknown>) => {
+  const rows = await fetchAllPages(url, 'Meta daily', 5)
+  return rows.map((d: Record<string, unknown>) => {
     const actions = (d.actions as { action_type: string; value: string }[]) ?? []
     const conversations = actions.find((a) =>
       a.action_type === 'onsite_conversion.messaging_conversation_started_7d' ||
