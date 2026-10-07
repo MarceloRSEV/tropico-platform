@@ -2,6 +2,7 @@
 
 import { MetaDailyRow } from '@/lib/meta'
 import { GoogleDailyRow } from '@/lib/google'
+import { weekdayShort, weekdayIndex } from './weekday'
 
 interface DailySpendChartProps {
   metaDaily: MetaDailyRow[]
@@ -103,10 +104,15 @@ export default function DailySpendChart({ metaDaily, googleDaily }: DailySpendCh
                       )}
                     </div>
 
-                    {/* Dia */}
-                    <div className="h-5 flex items-center justify-center">
+                    {/* Dia + dia da semana (fim de semana em destaque) */}
+                    <div className="h-8 flex flex-col items-center justify-start leading-none">
                       <p className="text-[10px] text-gray-700 font-medium whitespace-nowrap">
                         {day.date.substring(8)}
+                      </p>
+                      <p className={`text-[8px] uppercase tracking-wide whitespace-nowrap mt-0.5 ${
+                        weekdayIndex(day.date) === 0 || weekdayIndex(day.date) === 6 ? 'text-blue-600 font-semibold' : 'text-gray-400'
+                      }`}>
+                        {weekdayShort(day.date)}
                       </p>
                     </div>
                   </div>

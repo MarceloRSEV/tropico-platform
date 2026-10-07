@@ -96,6 +96,17 @@ export interface MetaDailyRow {
   conversations: number
 }
 
+/** Uma linha por dia × hora (fuso da conta de anúncios) */
+export interface MetaHourlyRow {
+  date: string
+  /** 0–23, hora local da conta (hourly_stats_aggregated_by_advertiser_time_zone) */
+  hour: number
+  spend: number
+  impressions: number
+  clicks: number
+  conversations: number
+}
+
 export interface MetaCreative {
   adId: string
   adName: string
@@ -489,6 +500,57 @@ export async function getMetaTopAds(since: string, until: string, limit = 3): Pr
         || findAction('messaging_conversation_started_7d'),
     }
   })
+}
+
+// ─── Breakdown por hora (melhores horários e dias) ────────────────────────────
+
+/**
+ * Gasto, impressões, cliques e conversas por dia × hora, no fuso da conta.
+ * Usado pelo bloco "Melhores horários e dias" do relatório. Usa breakdown
+ * `hourly_stats_aggregated_by_advertiser_time_zone` + `time_increment=1`
+ * (24 linhas por dia — 90 dias ≈ 2.160 linhas, por isso pagina em 500).
+ * Em erro devolve [] para não derrubar o relatório.
+ */
+export async function getMetaHourlyData(periodo = '90d'): Promise<MetaHourlyRow[]> {
+  try {
+    const adAccountId = process.env.META_AD_ACCOUNT_ID!
+    const timeRange = JSON.stringify({ since: sinceDate(periodo), until: today() })
+
+    const url = buildUrl(`${adAccountId}/insights`, {
+      fields: 'spend,impressions,clicks,actions',
+      time_range: timeRange,
+      time_increment: '1',
+      level: 'account',
+      breakdowns: 'hourly_stats_aggregated_by_advertiser_time_zone',
+      limit: '500',
+    })
+
+    const rows = await fetchAllPages(url, 'Meta hourly', 20)
+    return rows.map((d: Record<string, unknown>) => {
+      const actions = (d.actions as { action_type: string; value: string }[]) ?? []
+      const conversations = actions
+        .filter(a =>
+          a.action_type === 'onsite_conversion.messaging_conversation_started_7d' ||
+          a.action_type === 'messaging_conversation_started_7d'
+        )
+        .reduce((acc, a) => acc + parseInt(a.value ?? '0', 10), 0)
+
+      // Formato devolvido pela API: "08:00:00 - 08:59:59"
+      const hour = parseInt(String(d.hourly_stats_aggregated_by_advertiser_time_zone ?? '0').slice(0, 2), 10)
+
+      return {
+        date: d.date_start as string,
+        hour: Number.isNaN(hour) ? 0 : hour,
+        spend: parseFloat((d.spend as string) ?? '0'),
+        impressions: parseInt((d.impressions as string) ?? '0', 10),
+        clicks: parseInt((d.clicks as string) ?? '0', 10),
+        conversations,
+      }
+    })
+  } catch (error) {
+    console.error('[Meta getMetaHourlyData]', error)
+    return []
+  }
 }
 
 // ─── Função principal ─────────────────────────────────────────────────────────

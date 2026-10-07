@@ -1,8 +1,9 @@
 import Link from 'next/link'
-import { getMetaDashboardData } from '@/lib/meta'
+import { getMetaDashboardData, getMetaHourlyData } from '@/lib/meta'
 import { getGoogleDashboardData, periodRange } from '@/lib/google'
 import DailySpendChart from './DailySpendChart'
 import ConversationBarChart from './ConversationBarChart'
+import BestTimesChart from './BestTimesChart'
 import TopAdsCards from './TopAdsCards'
 import CampaignTypeChart from './CampaignTypeChart'
 import WeeklyComparisonTable from './WeeklyComparisonTable'
@@ -53,16 +54,19 @@ const FILTROS = [
 ]
 
 const TABLE_AD_LIMIT = 20
+/** Janela fixa do bloco "Melhores horários e dias" — 15 dias é pouco para o padrão aparecer */
+const BEST_TIMES_DAYS = 90
 
 type Props = { searchParams: Promise<{ periodo?: string }> }
 
 export default async function RelatorioPage({ searchParams }: Props) {
   const { periodo = 'mes' } = await searchParams
-  const [data, google, dataFull, googleFull] = await Promise.all([
+  const [data, google, dataFull, googleFull, hourly] = await Promise.all([
     getMetaDashboardData(periodo),
     getGoogleDashboardData(periodo),
     getMetaDashboardData('60d'), // Dados completos para o Comparativo Semanal
     getGoogleDashboardData('60d'),
+    getMetaHourlyData(`${BEST_TIMES_DAYS}d`), // Melhores horários e dias (Meta, por hora)
   ])
   const { overview, cities, updatedAt } = data
   // Lista completa (todos os anúncios com entrega no período) alimenta o ranking e os KPIs;
@@ -151,6 +155,11 @@ export default async function RelatorioPage({ searchParams }: Props) {
         {/* Conversas Diárias */}
         <section>
           <ConversationBarChart daily={data.daily} />
+        </section>
+
+        {/* Melhores horários e dias (Meta) */}
+        <section>
+          <BestTimesChart hourly={hourly} periodDays={BEST_TIMES_DAYS} />
         </section>
 
         {/* Melhores anúncios por conversas */}
