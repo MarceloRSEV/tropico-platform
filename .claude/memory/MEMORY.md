@@ -2,6 +2,15 @@
 
 > 📋 **Pendências centralizadas (2026-09-24):** a lista oficial do que está aberto para este cliente fica em `C:/Users/User/Documents/Squad-Escalada/PENDENCIAS.md`. As listas de tarefas abaixo são histórico de sessão — ao abrir/concluir pendência, atualizar lá.
 
+## ⚡ SESSÃO 2026-10-05/07 — Rotina semanal + fechamento de gates + TSK-018
+
+- **Contato principal do cliente (TSK-015 concluída 2026-10-07): Felipe Kreling, proprietário.** Sem e-mail nem telefone direto por decisão do Marcelo — comunicação pelo **grupo de WhatsApp**; acesso ao relatório já entregue via Vercel. Relatório semanal por e-mail e usuário Supabase `client` deixam de ser pendência prioritária. Registro em `Squad-Escalada/.aiox-core/data/clients.yaml` (CLT-003).
+- **TSK-020 CONCLUÍDA:** Marcelo pausou "Vans_feminino_masc" direto na conta em 2026-10-05 (162% acima da meta, zero conversas na semana). Campanha passou a rodar só com "Masculino" — CPL caiu de R$22,21 (semana cheia, 2 conjuntos) para R$18,68 (3 dias só com Masculino). Gate aberto: escalar verba +20% (R$40→R$48/dia), aguardando OK.
+- **Veredito do teste A/B/C da Reconhecimento_lojacaxias (2026-10-06):** dado real por ad set (28/09-05/10) — **interesses_vans venceu** em CPP (R$1,75/1.000), frequência (1,17) e engajamento (81,0/1.000); "Interesses - IA" confirmado pior (21,1/1.000, zero conversas), exatamente como a auditoria de 29/09 previu. Marcelo pausou "Interesses - IA" e dobrou a verba do interesses_vans (R$6→R$12/dia) no mesmo dia.
+- **TSK-018 — achado novo (2026-10-06):** ver [[tropico-tsk018-investigacao-2026-10-06]] na memória do Squad-Escalada — o site tem 2 caminhos de tracking de WhatsApp (trigger legado por `wa.me`, provavelmente morto, vs. widget com evento customizado `whatsapp_lead`, confirmado disparando certo no Preview do GTM). Google Ads API ainda mostra zero conversões; suspeita de atraso de relatório, reconferir 2026-10-08.
+- **Hub real:** painel de Gates em `/trafego` tinha um bug (`approved_by === "pending"` nunca batia com o `null` usado no YAML) — corrigido e publicado em `escalada-hub` (commit `882a223`/`6c0285c`). Sync `campaigns.yaml → Supabase` (`scripts/sync-hub-data.js`) também estava quebrado desde 28/09 (apontava pro hub paralelo descontinuado) — corrigido em 2026-10-05.
+- Métricas reais da semana 2026-W40 coletadas via API (Google Ads: tabela `tropico_google_ads_daily`; Meta: Graph API `level=campaign`/`level=adset`) — ver `docs/clients/tropico/reports/weekly-2026-W40.md` no Squad-Escalada.
+
 ## ⚡ SESSÃO 2026-09-29 — Auditoria de tráfego + onboarding (@traffic-manager Max)
 
 - **Relatório:** `Squad-Escalada/docs/clients/tropico/reports/audit-trafego-20260929.md` (Meta 90d + Google 31/07→28/09, somente leitura via API).
@@ -10,7 +19,7 @@
 - **Achados-chave:** (1) Google Ads com 0 conversões em 13 meses apesar de 2 ações primárias (tag `AW-16644575808` ausente no HTML; site Loja Integrada com `GTM-NSNSQ54`) → TSK-018; (2) Meta: conjunto Masculino R$ 15/conversa com 19% da verba vs Vans_feminino_masc R$ 57 com 81%; mulheres 18-34 a R$ 95 → TSK-020; (3) sem exclusão de convertidos nem remarketing → TSK-021; (4) Google tudo em ampla, QS 1-4, 2 grupos com as mesmas palavras, IS 10%.
 - **Teste em andamento:** 3 públicos da Reconhecimento_lojacaxias (Caxias Raio 2 km × Interesses-IA 9 km × interesses_vans 80 km novo de 28/09), R$ 6/dia cada, mesmos criativos. Veredito em **2026-10-06** por custo/1.000 alcançados, frequência e engajamento/1.000 imp. Marcelo vai revisar o raio de 80 km manualmente.
 - **Bug corrigido (2026-09-30, commit 97d37ce):** série diária do Meta no `/relatorio` parava todo mês no dia 25 — Graph API pagina `time_increment=1` em 25 linhas e `fetchDaily` não seguia `paging.next`. Agora `limit=500` + `fetchAllPages`. `sinceDate` também passou a aceitar `60d` (Comparativo Semanal usava mês corrente). Verificado em produção: dias 26→30/09 aparecem. Lição: toda chamada `/insights` com breakdown ou incremento deve paginar.
-- **Como puxar dados:** Meta via Graph API v21 com `META_ACCESS_TOKEN` do `.env` (expira **2026-10-06** → TSK-019); Google via GAQL v22 (script em scratchpad; sem `pageSize` no body e datas como `BETWEEN 'YYYY-MM-DD' AND ...`, `LAST_60_DAYS` não existe). Rodar com `node --env-file=.env`.
+- **Como puxar dados:** Meta via Graph API v21 com `META_ACCESS_TOKEN` do `.env` (renovado 2026-10-05, long-lived, expira **2026-12-04** → renovar antes: Graph Explorer app 1497870288440701, conta Ana Paula Ruffatto, gerar token curto → trocar por long-lived via `fb_exchange_token` → atualizar `.env` + Vercel `tropico-platform` + redeploy); Google via GAQL v22 (script em scratchpad; sem `pageSize` no body e datas como `BETWEEN 'YYYY-MM-DD' AND ...`, `LAST_60_DAYS` não existe). Rodar com `node --env-file=.env`.
 
 ## ⚡ SESSÃO 2026-08-25 — Automação Keep-Alive + Crons (✅ COMPLETO)
 
@@ -282,3 +291,7 @@ Status: ❌ Token expirado (401 invalid_grant)
 
 ## 2026-09-24 — Bloco "Melhores Anúncios" no /relatorio ✅
 - `src/app/relatorio/TopAdsCards.tsx`: top 3 anúncios por conversas com imagem 600x600 (via `creative.thumbnail_width(600).thumbnail_height(600)`), abaixo de "Conversas por Dia". Commit 748a183, no ar em https://tropico-platform.vercel.app/relatorio.
+
+## 2026-10-07 — Bloco "Melhores horários e dias" no /relatorio ✅
+- `src/lib/meta.ts` → `getMetaHourlyData()` (breakdown por hora, fuso da conta); `src/app/relatorio/BestTimesChart.tsx` (destaques, barras por dia da semana e por hora, blocos, mapa de calor), janela fixa de 90 dias. `DailySpendChart`/`ConversationBarChart` ganharam o dia da semana abaixo do dia. Commit f884dff, `main`.
+- Achados 90d (100 conversas, R$ 47 média): quinta R$ 27/conversa (melhor), terça R$ 67 e domingo R$ 64 (piores); manhã 6h–11h R$ 35 (melhor faixa), madrugada R$ 92 (pior), noite recebe 41% do gasto a R$ 52.

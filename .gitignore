@@ -41,3 +41,8 @@ Thumbs.db
 
 # Setup files
 setup-supabase.html
+
+.vercel
+
+# AIOX runtime state (handoffs, agent state)
+.aiox/
