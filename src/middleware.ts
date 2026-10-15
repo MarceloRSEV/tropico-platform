@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { SESSION_COOKIE, isReportAuthorized, secretsMatch, verifySession } from "@/lib/report-session";
 
 const PROTECTED_ROUTES = ["/dashboard", "/crm", "/campaigns", "/analysis", "/suggestions", "/settings"];
 const AUTH_ROUTES = ["/login"];
@@ -9,13 +10,24 @@ export async function middleware(request: NextRequest) {
 
   // Proteção por senha para /relatorio (independente do Supabase)
   if (pathname.startsWith('/relatorio') && !pathname.startsWith('/relatorio/login')) {
-    const session = request.cookies.get('tropico_session')?.value
+    const session = request.cookies.get(SESSION_COOKIE)?.value
     const pdfToken = request.nextUrl.searchParams.get('pdfToken')
-    const validPdfToken = process.env.PDF_TOKEN && pdfToken === process.env.PDF_TOKEN
-    if (session !== process.env.SESSION_SECRET && !validPdfToken) {
+    const validPdfToken = await secretsMatch(pdfToken, process.env.PDF_TOKEN)
+    if (!(await verifySession(session)) && !validPdfToken) {
       const url = request.nextUrl.clone()
       url.pathname = '/relatorio/login'
+      url.search = ''
       return NextResponse.redirect(url)
+    }
+  }
+
+  // APIs de dados: sessão do relatório ou Bearer de serviço (REPORT_API_TOKEN/CRON_SECRET)
+  if (pathname === '/api/meta' || pathname === '/api/google') {
+    if (!(await isReportAuthorized(request))) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401, headers: { 'Cache-Control': 'private, no-store' } },
+      )
     }
   }
 

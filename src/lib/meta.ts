@@ -34,7 +34,7 @@ function sinceDate(periodo: string): string {
   // `60d`, usado pelo Comparativo Semanal, caía no mês corrente).
   const days = /^(\d+)d$/.exec(periodo)
   if (days) {
-    d.setDate(d.getDate() - (parseInt(days[1], 10) - 1))
+    d.setDate(d.getDate() - (Math.min(parseInt(days[1], 10), 366) - 1))
     return d.toISOString().split('T')[0]
   }
   if (periodo === 'ano') {
@@ -62,7 +62,9 @@ async function fetchAllPages(firstUrl: string, label: string, maxPages = 10): Pr
     }
     const json = await res.json()
     all.push(...(json.data ?? []))
-    url = json.paging?.next ?? null
+    const next: string | null = json.paging?.next ?? null
+    // Só segue paginação para o host oficial (o token vai na URL)
+    url = next && new URL(next).hostname === 'graph.facebook.com' ? next : null
   }
 
   return all
@@ -689,8 +691,8 @@ export async function getMetaDashboardData(periodo = 'mes'): Promise<MetaDashboa
       updatedAt: new Date().toISOString(),
     }
 
-    // Salva em cache de forma assíncrona (sem bloquear)
-    saveToCacheAsync(result)
+    // Aguarda a gravação: em serverless a função congela após a resposta
+    await saveToCacheAsync(result)
 
     return result
   } catch (error) {

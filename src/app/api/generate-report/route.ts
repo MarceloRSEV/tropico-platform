@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getMetaRangeSummary, getMetaTopAds, type MetaRangeSummary } from '@/lib/meta'
+import { secretsMatch } from '@/lib/report-session'
 import { getGoogleRangeOverview, isGoogleAdsConfigured, type GoogleOverview } from '@/lib/google'
 
 // Endpoint consumido pelo n8n (envio semanal de email) — sempre dinâmico
@@ -7,16 +8,18 @@ export const dynamic = 'force-dynamic'
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-function isAuthorized(request: NextRequest): boolean {
-  // REPORT_API_TOKEN é o token oficial; PDF_TOKEN serve de fallback
+async function isAuthorized(request: NextRequest): Promise<boolean> {
+  // REPORT_API_TOKEN é o token oficial; PDF_TOKEN serve de fallback (mantido
+  // por compatibilidade com o n8n atual). Comparação em tempo constante.
   const expected = process.env.REPORT_API_TOKEN || process.env.PDF_TOKEN
   if (!expected) return false
 
   const authHeader = request.headers.get('authorization')
-  if (authHeader?.startsWith('Bearer ') && authHeader.slice(7) === expected) {
+  if (authHeader?.startsWith('Bearer ') && (await secretsMatch(authHeader.slice(7), expected))) {
     return true
   }
-  return request.nextUrl.searchParams.get('token') === expected
+  // Legado: ?token= (aparece em logs; migrar o n8n para Authorization: Bearer)
+  return secretsMatch(request.nextUrl.searchParams.get('token'), expected)
 }
 
 // ─── Datas ────────────────────────────────────────────────────────────────────
@@ -83,7 +86,7 @@ function googleVariation(week: GoogleOverview, prev: GoogleOverview) {
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  if (!(await isAuthorized(request))) {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 

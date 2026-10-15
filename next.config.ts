@@ -6,9 +6,21 @@ const nextConfig: NextConfig = {
       allowedOrigins: [
         "localhost:3000",
         "tropico.escaladavirtual.com.br",
-        "*.vercel.app",
+        "tropico-platform.vercel.app",
       ],
     },
+  },
+  async headers() {
+    return [
+      {
+        source: "/relatorio/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "private, no-store" },
+        ],
+      },
+    ];
   },
 };
 

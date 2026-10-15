@@ -42,7 +42,7 @@ function sinceDate(periodo: string): string {
   const d = new Date()
   const days = /^(\d+)d$/.exec(periodo)
   if (days) {
-    d.setDate(d.getDate() - (parseInt(days[1], 10) - 1))
+    d.setDate(d.getDate() - (Math.min(parseInt(days[1], 10), 366) - 1))
     return d.toISOString().split('T')[0]
   }
   if (periodo === 'ano') {
@@ -145,7 +145,8 @@ async function getAccessToken(): Promise<string> {
 
   if (!res.ok) {
     const body = await res.text()
-    throw new Error(`Google OAuth error: ${res.status} — ${body}`)
+    console.error('[Google OAuth Error]', res.status, body.slice(0, 300))
+    throw new Error(`Google OAuth error: ${res.status}`)
   }
 
   const json: { access_token: string; expires_in: number } = await res.json()
@@ -177,25 +178,29 @@ export async function gaqlSearch(query: string): Promise<GoogleAdsSearchRow[]> {
     headers['login-customer-id'] = loginCustomerId.replace(/\D/g, '')
   }
 
-  console.log('[GAQL] Customer ID:', custId, 'Login Customer ID:', headers['login-customer-id'])
-  console.log('[GAQL] Query:', query.substring(0, 100))
+  const out: GoogleAdsSearchRow[] = []
+  let pageToken: string | undefined
+  for (let page = 0; page < 50; page++) {
+    const res = await fetch(`${GOOGLE_ADS_API}/customers/${custId}/googleAds:search`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query, pageSize: 10000, ...(pageToken ? { pageToken } : {}) }),
+      next: { revalidate: 1800 },
+    })
 
-  const res = await fetch(`${GOOGLE_ADS_API}/customers/${custId}/googleAds:search`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ query }),
-    next: { revalidate: 1800 },
-  })
+    if (!res.ok) {
+      const body = await res.text()
+      // Corpo bruto só no log do servidor (truncado); a exceção não o carrega
+      console.error('[GAQL Error]', res.status, body.slice(0, 500))
+      throw new Error(`Google Ads API error: ${res.status}`)
+    }
 
-  if (!res.ok) {
-    const body = await res.text()
-    console.error('[GAQL Error]', res.status, body)
-    throw new Error(`Google Ads API error: ${res.status} — ${body}`)
+    const json: { results?: GoogleAdsSearchRow[]; nextPageToken?: string } = await res.json()
+    out.push(...(json.results ?? []))
+    pageToken = json.nextPageToken
+    if (!pageToken) break
   }
-
-  const json: { results?: GoogleAdsSearchRow[] } = await res.json()
-  console.log('[GAQL] Results:', json.results?.length ?? 0, 'rows')
-  return json.results ?? []
+  return out
 }
 
 const MICROS = 1e6
