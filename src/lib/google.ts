@@ -184,7 +184,8 @@ export async function gaqlSearch(query: string): Promise<GoogleAdsSearchRow[]> {
     const res = await fetch(`${GOOGLE_ADS_API}/customers/${custId}/googleAds:search`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ query, pageSize: 10000, ...(pageToken ? { pageToken } : {}) }),
+      // v26 não aceita pageSize (PAGE_SIZE_NOT_SUPPORTED): página fixa de 10.000 linhas
+      body: JSON.stringify({ query, ...(pageToken ? { pageToken } : {}) }),
       next: { revalidate: 1800 },
     })
 
