@@ -6,7 +6,7 @@
 // Valores monetários da API vêm em MICROS (1 unidade = 1e-6 da moeda) —
 // sempre dividir por 1e6 antes de expor.
 
-const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v22'
+const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v26'
 const OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 
 // ─── Configuração ─────────────────────────────────────────────────────────────

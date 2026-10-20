@@ -51,12 +51,12 @@ async function testGoogleAdsAPI() {
 
     // Passo 2: Chamar API
     console.log('2️⃣  Chamando Google Ads API...');
-    console.log(`   URL: https://googleads.googleapis.com/v22/customers/${GOOGLE_ADS_CUSTOMER_ID}/googleAds:search`);
+    console.log(`   URL: https://googleads.googleapis.com/v26/customers/${GOOGLE_ADS_CUSTOMER_ID}/googleAds:search`);
     console.log(`   Login Customer ID: ${GOOGLE_ADS_LOGIN_CUSTOMER_ID}`);
     console.log(`   Customer ID: ${GOOGLE_ADS_CUSTOMER_ID}\n`);
 
     const response = await fetch(
-      `https://googleads.googleapis.com/v22/customers/${GOOGLE_ADS_CUSTOMER_ID}/googleAds:search`,
+      `https://googleads.googleapis.com/v26/customers/${GOOGLE_ADS_CUSTOMER_ID}/googleAds:search`,
       {
         method: 'POST',
         headers: {
